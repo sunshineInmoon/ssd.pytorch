@@ -5,32 +5,34 @@ import torch
 
 
 class PriorBox(object):
-    """Compute priorbox coordinates in center-offset form for each source
+    """Compute priorbox coordinates in center-offset(中心偏离) form for each source
     feature map.
     """
+    # 以cfg = voc 为例
     def __init__(self, cfg):
         super(PriorBox, self).__init__()
-        self.image_size = cfg['min_dim']
+        self.image_size = cfg['min_dim'] #‘min_dim’: 300
         # number of priors for feature map location (either 4 or 6)
-        self.num_priors = len(cfg['aspect_ratios'])
-        self.variance = cfg['variance'] or [0.1]
-        self.feature_maps = cfg['feature_maps']
-        self.min_sizes = cfg['min_sizes']
-        self.max_sizes = cfg['max_sizes']
-        self.steps = cfg['steps']
-        self.aspect_ratios = cfg['aspect_ratios']
-        self.clip = cfg['clip']
-        self.version = cfg['name']
+        self.num_priors = len(cfg['aspect_ratios']) # 6
+        self.variance = cfg['variance'] or [0.1] #'variance': [0.1, 0.2]
+        self.feature_maps = cfg['feature_maps'] #'feature_maps': [38, 19, 10, 5, 3, 1]
+        self.min_sizes = cfg['min_sizes'] #'min_sizes': [30, 60, 111, 162, 213, 264]
+        self.max_sizes = cfg['max_sizes'] #'max_sizes': [60, 111, 162, 213, 264, 315]
+        self.steps = cfg['steps'] #'steps': [8, 16, 32, 64, 100, 300]
+        self.aspect_ratios = cfg['aspect_ratios'] #纵横比 'aspect_ratios': [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
+        self.clip = cfg['clip'] #'clip': True
+        self.version = cfg['name'] # VOC
         for v in self.variance:
             if v <= 0:
                 raise ValueError('Variances must be greater than 0')
 
     def forward(self):
         mean = []
-        for k, f in enumerate(self.feature_maps):
-            for i, j in product(range(f), repeat=2):
+        for k, f in enumerate(self.feature_maps): #'feature_maps': [38, 19, 10, 5, 3, 1] 论文中特征图的大小
+            for i, j in product(range(f), repeat=2): # A_n_2 组合，获取每个像素的坐标
                 f_k = self.image_size / self.steps[k]
-                # unit center x,y
+                # unit center x,y 对像素坐标进行归一化，
+                # 加上0.5，cx，cy是小数了
                 cx = (j + 0.5) / f_k
                 cy = (i + 0.5) / f_k
 
