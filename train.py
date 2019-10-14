@@ -86,7 +86,7 @@ def train():
         cfg = voc
         dataset = VOCDetection(root=args.dataset_root,
                                transform=SSDAugmentation(cfg['min_dim'],
-                                                         MEANS))
+                                                         MEANS)) #数据的读取和预处理
 
     if args.visdom:
         import visdom
@@ -113,7 +113,7 @@ def train():
     if not args.resume:
         print('Initializing weights...')
         # initialize newly added layers' weights with xavier method
-        ssd_net.extras.apply(weights_init)
+        ssd_net.extras.apply(weights_init) #对网络中每一层应用weights_init函数，这里是对卷积的weight初始化
         ssd_net.loc.apply(weights_init)
         ssd_net.conf.apply(weights_init)
 
@@ -214,7 +214,7 @@ def xavier(param):
     init.xavier_uniform(param)
 
 
-def weights_init(m):
+def weights_init(m): #初始化卷积参数
     if isinstance(m, nn.Conv2d):
         xavier(m.weight.data)
         m.bias.data.zero_()
