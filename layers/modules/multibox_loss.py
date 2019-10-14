@@ -6,7 +6,8 @@ from torch.autograd import Variable
 from data import coco as cfg
 from ..box_utils import match, log_sum_exp
 
-
+# criterion = MultiBoxLoss(cfg['num_classes'], 0.5, True, 0, True, 3, 0.5,
+#                             False, args.cuda)
 class MultiBoxLoss(nn.Module):
     """SSD Weighted Loss Function
     Compute Targets:
@@ -15,7 +16,7 @@ class MultiBoxLoss(nn.Module):
            (default threshold: 0.5).
         2) Produce localization target by 'encoding' variance into offsets of ground
            truth boxes and their matched  'priorboxes'.
-        3) Hard negative mining to filter the excessive number of negative examples
+        3) Hard negative mining to filter the excessive(过多) number of negative examples
            that comes with using a large number of default bounding boxes.
            (default negative:positive ratio 3:1)
     Objective Loss:
@@ -34,16 +35,16 @@ class MultiBoxLoss(nn.Module):
                  bkg_label, neg_mining, neg_pos, neg_overlap, encode_target,
                  use_gpu=True):
         super(MultiBoxLoss, self).__init__()
-        self.use_gpu = use_gpu
-        self.num_classes = num_classes
-        self.threshold = overlap_thresh
-        self.background_label = bkg_label
-        self.encode_target = encode_target
-        self.use_prior_for_matching = prior_for_matching
-        self.do_neg_mining = neg_mining
-        self.negpos_ratio = neg_pos
-        self.neg_overlap = neg_overlap
-        self.variance = cfg['variance']
+        self.use_gpu = use_gpu #use_gpu=True 是否用GPU
+        self.num_classes = num_classes #num_classes=21 类别数量
+        self.threshold = overlap_thresh #overlap_thresh=0.5 IOU阈值
+        self.background_label = bkg_label #背景label=0
+        self.encode_target = encode_target #encode_target=False
+        self.use_prior_for_matching = prior_for_matching #True
+        self.do_neg_mining = neg_mining #难样本挖掘 True
+        self.negpos_ratio = neg_pos #negative ：positive = 3：1
+        self.neg_overlap = neg_overlap # 0.5
+        self.variance = cfg['variance'] #'variance': [0.1, 0.2]
 
     def forward(self, predictions, targets):
         """Multibox Loss
@@ -58,14 +59,14 @@ class MultiBoxLoss(nn.Module):
                 shape: [batch_size,num_objs,5] (last idx is the label).
         """
         loc_data, conf_data, priors = predictions
-        num = loc_data.size(0)
+        num = loc_data.size(0) # batch_size N
         priors = priors[:loc_data.size(1), :]
-        num_priors = (priors.size(0))
+        num_priors = (priors.size(0)) # 
         num_classes = self.num_classes
 
         # match priors (default boxes) and ground truth boxes
-        loc_t = torch.Tensor(num, num_priors, 4)
-        conf_t = torch.LongTensor(num, num_priors)
+        loc_t = torch.Tensor(num, num_priors, 4) #loc_target
+        conf_t = torch.LongTensor(num, num_priors) #conf_target
         for idx in range(num):
             truths = targets[idx][:, :-1].data
             labels = targets[idx][:, -1].data
