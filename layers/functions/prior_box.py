@@ -51,7 +51,9 @@ class PriorBox(object):
                     mean += [cx, cy, s_k*sqrt(ar), s_k/sqrt(ar)]
                     mean += [cx, cy, s_k/sqrt(ar), s_k*sqrt(ar)]
         # back to torch land
-        output = torch.Tensor(mean).view(-1, 4)
+        # 对于不同分辨率的feature map我们设计不同大小的先验框，同时我们需要注意第二个循环，是对feature map上每个像素点的循环
+        # 因此总的先验框数量为4*38*38+6*19*19+6*10*10+6*5*5+4*3*3+4*1*1=8732
+        output = torch.Tensor(mean).view(-1, 4) 
         if self.clip:
             output.clamp_(max=1, min=0)
         return output
