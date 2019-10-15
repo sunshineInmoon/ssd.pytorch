@@ -58,19 +58,20 @@ class MultiBoxLoss(nn.Module):
             targets (tensor): Ground truth boxes and labels for a batch,
                 shape: [batch_size,num_objs,5] (last idx is the label).
         """
-        loc_data, conf_data, priors = predictions
+        # loc_data Shape: [batch,num_priors,4l]
+        loc_data, conf_data, priors = predictions 
         num = loc_data.size(0) # batch_size N
-        priors = priors[:loc_data.size(1), :]
-        num_priors = (priors.size(0)) # 
-        num_classes = self.num_classes
+        priors = priors[:loc_data.size(1), :] #priors的维度8732*4
+        num_priors = (priors.size(0)) # 8732
+        num_classes = self.num_classes #21
 
         # match priors (default boxes) and ground truth boxes
-        loc_t = torch.Tensor(num, num_priors, 4) #loc_target
-        conf_t = torch.LongTensor(num, num_priors) #conf_target
-        for idx in range(num):
-            truths = targets[idx][:, :-1].data
-            labels = targets[idx][:, -1].data
-            defaults = priors.data
+        loc_t = torch.Tensor(num, num_priors, 4) #loc_target 是个差值，是ground和default boxes的差值，我们拟合这个差值
+        conf_t = torch.LongTensor(num, num_priors) #conf_target 为每个default分配一个label
+        for idx in range(num): #遍历N张图片，但是一张图片里可能有多个目标，所以下面targets索引时才是下面那个样子
+            truths = targets[idx][:, :-1].data #获取ground truth boxes坐标 
+            labels = targets[idx][:, -1].data #获取对应label
+            defaults = priors.data #获取先验框
             match(self.threshold, truths, defaults, self.variance, labels,
                   loc_t, conf_t, idx)
         if self.use_gpu:
@@ -80,22 +81,27 @@ class MultiBoxLoss(nn.Module):
         loc_t = Variable(loc_t, requires_grad=False)
         conf_t = Variable(conf_t, requires_grad=False)
 
-        pos = conf_t > 0
-        num_pos = pos.sum(dim=1, keepdim=True)
+        pos = conf_t > 0 #非背景Prior(default boxes)的数量即正样本, 将conf_t>0的位置标记为1
+        num_pos = pos.sum(dim=1, keepdim=True) #正样本的数量
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
+        # pos Shape: [batch,num_priors]
+        # pos.unsqueeze(pos.dim()) Shape: [batch,num_priors,1]
         pos_idx = pos.unsqueeze(pos.dim()).expand_as(loc_data)
-        loc_p = loc_data[pos_idx].view(-1, 4)
+        loc_p = loc_data[pos_idx].view(-1, 4) #之所以将pos维度转成和loc_data相同，为了将其做成掩码
         loc_t = loc_t[pos_idx].view(-1, 4)
         loss_l = F.smooth_l1_loss(loc_p, loc_t, size_average=False)
 
         # Compute max conf across batch for hard negative mining
+        # conf_data Shape: [batch,num_priors,num_classes]
+        # batch_conf Shape: [batch*num_priors, num_classes]
         batch_conf = conf_data.view(-1, self.num_classes)
-        loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
+        # conf_t 为每一个Prior分配了一个label Shape: [batch, num_priors]
+        loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1)) #????
 
-        # Hard Negative Mining
-        loss_c[pos] = 0  # filter out pos boxes for now
+        # Hard Negative Mining #难负样本挖掘
+        loss_c[pos] = 0  # filter out pos boxes for now 正样本不考虑
         loss_c = loss_c.view(num, -1)
         _, loss_idx = loss_c.sort(1, descending=True)
         _, idx_rank = loss_idx.sort(1)
