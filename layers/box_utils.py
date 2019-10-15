@@ -85,31 +85,54 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
     Return:
         The matched indices corresponding to 1)location and 2)confidence preds.
     """
-    # jaccard index
+    # jaccard index 首先计算IOU
     overlaps = jaccard(
-        truths,
-        point_form(priors)
-    )
+        truths, #维度 1*4
+        point_form(priors) #先验框是中心点(x,y),大小(w,h)的形式要将其转换成xmin,yxmin,xmax,ymax的形式。priors的维度87362*4
+    ) #overlaps的维度1*8732，即行代表ground truth boxes，列代表default boxes
     # (Bipartite Matching)
     # [1,num_objects] best prior for each ground truth
-    best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
+    # 每一行的最大值，即对每个ground truth来说最佳匹配的先验框
+    # 按照上面的维度假设，best_prior_overlap的维度为1*1（注意是个二维的）
+    # best_prior_idx的维度也是1*1
+    # 如果一张图片上有n目标，则此时best_prior_idx和best_prior_overlap的维度为n*1
+    # 从行的角度来看
+    # best_prior_overlap 表示8732个defalut boxes和当前ground truth boxes IOU最大值
+    # best_prior_idx 表示8732个default boxes和当前ground truth boxes，哪个prior的IOU最大
+    best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True) 
     # [1,num_priors] best ground truth for each prior
-    best_truth_overlap, best_truth_idx = overlaps.max(0, keepdim=True)
-    best_truth_idx.squeeze_(0)
+    # 按照上面的维度假设，best_truth_overlap的维度为1*8732
+    # best_truth_idx的维度1*8732
+    # 即使一张图片上有多个目标，best_truth_idx和best_truth_overlap的维度仍然为1*8732
+    # 从列的角度看
+    # best_truth_overlap 表示多个ground truth boxes和当前prior IOU最大值
+    # best_truth_idx 表示哪个ground truth boxes和当前的prior IOU最大
+    best_truth_overlap, best_truth_idx = overlaps.max(0, keepdim=True) #每一列的最大值，即对每个prior来说最佳匹配的ground truth
+    # 上面四个变量都是二维的，下面去掉以为
+    best_truth_idx.squeeze_(0) # 消除掉维度为1的维度 维度即变为8732
     best_truth_overlap.squeeze_(0)
-    best_prior_idx.squeeze_(1)
+    best_prior_idx.squeeze_(1) #消除掉维度为1的维度，如果一张图片上只有一个目标则结果为1，否则为n
     best_prior_overlap.squeeze_(1)
-    best_truth_overlap.index_fill_(0, best_prior_idx, 2)  # ensure best prior
+    # 前面我已经为每个prior选择了对应的ground truth boxes；然后我们在从中prior中选择那些对ground truth boxes来说IOU值最大的prior
+    # 即我们选择出prior与ground truth boxes相互来说都最大的prior； 确保做好的prior，将他的IOU设置成2
+    best_truth_overlap.index_fill_(0, best_prior_idx, 2)  # ensure best prior 
     # TODO refactor: index  best_prior_idx with long tensor
     # ensure every gt matches with its prior of max overlap
-    for j in range(best_prior_idx.size(0)):
+    for j in range(best_prior_idx.size(0)): #遍历一张图片上的目标数
+        # best_prior_idx[j] 和第j个目标IOU最大值的Prior索引
+        # best_truth_idx 保存的是ground truth boxes索引，现在将第best_prior_idx[j]设置成j
+        # 即改变了第best_prior_idx[j]个Prior对应的ground truth boxes 为j
         best_truth_idx[best_prior_idx[j]] = j
+    # 由于best_truth_idx的维度为1*8732，当一张图片上有多个目标是可能他的值为[0.2.3.1]
+    # 当一张图片上有多个值是truths的维度为n*4
+    # 下面的操作truths[best_truth_idx],以best_truth_idx为所以选择truths中某一行，即为每个prior选择对应的ground truth boxes坐标
+    # 所以维度才是如下所示
     matches = truths[best_truth_idx]          # Shape: [num_priors,4]
-    conf = labels[best_truth_idx] + 1         # Shape: [num_priors]
-    conf[best_truth_overlap < threshold] = 0  # label as background
-    loc = encode(matches, priors, variances)
-    loc_t[idx] = loc    # [num_priors,4] encoded offsets to learn
-    conf_t[idx] = conf  # [num_priors] top class label for each prior
+    conf = labels[best_truth_idx] + 1         # Shape: [num_priors] 同理为每个Prior选择对应的label，加1是因为背景label为0
+    conf[best_truth_overlap < threshold] = 0  # label as background 我们把Prior和任意一个ground truth boxes的IOU的最大值都小于阈值的认为是背景
+    loc = encode(matches, priors, variances)  # 对于框的坐标我们最终拟合的是ground truth boxes 和 Prior boxes的差值，encode()函数就是起到这个转换作用
+    loc_t[idx] = loc    # [num_priors,4] encoded offsets to learn 每个Prior boxes拟合的目标
+    conf_t[idx] = conf  # [num_priors] top class label for each prior 每个Prior 类别目标
 
 
 def encode(matched, priors, variances):
@@ -126,9 +149,9 @@ def encode(matched, priors, variances):
     """
 
     # dist b/t match center and prior's center
-    g_cxcy = (matched[:, :2] + matched[:, 2:])/2 - priors[:, :2]
+    g_cxcy = (matched[:, :2] + matched[:, 2:])/2 - priors[:, :2] #中心点的差值
     # encode variance
-    g_cxcy /= (variances[0] * priors[:, 2:])
+    g_cxcy /= (variances[0] * priors[:, 2:]) #看论文中的公式，都有一个除法
     # match wh / prior wh
     g_wh = (matched[:, 2:] - matched[:, :2]) / priors[:, 2:]
     g_wh = torch.log(g_wh) / variances[1]
