@@ -91,11 +91,11 @@ class SSD(nn.Module):
 
         # apply multibox head to source layers
         for (x, l, c) in zip(sources, self.loc, self.conf):
-            loc.append(l(x).permute(0, 2, 3, 1).contiguous())
-            conf.append(c(x).permute(0, 2, 3, 1).contiguous())
+            loc.append(l(x).permute(0, 2, 3, 1).contiguous()) #len(loc) = 6
+            conf.append(c(x).permute(0, 2, 3, 1).contiguous()) #len(conf) = 6
 
-        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
-        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
+        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1) # loc = N*C_1
+        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1) # conf = N*C_2
         if self.phase == "test":
             output = self.detect(
                 loc.view(loc.size(0), -1, 4),                   # loc preds
@@ -105,8 +105,8 @@ class SSD(nn.Module):
             )
         else:
             output = (
-                loc.view(loc.size(0), -1, 4),
-                conf.view(conf.size(0), -1, self.num_classes),
+                loc.view(loc.size(0), -1, 4), #第一维：batch_size; 第二维：框的数量，每个像素点都有多个框；第三维：四个坐标
+                conf.view(conf.size(0), -1, self.num_classes), #和loc类似
                 self.priors
             )
         return output
